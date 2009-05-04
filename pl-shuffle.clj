@@ -16,51 +16,46 @@
   "Shuffles a collection, putting highly-weighted elements near the front with
 higher probability.
 
-If weights-or-fn is a collection, the weight of an element is given by the
-corresponding element in weights-or-fn.
-Otherwise, the weight of an element of coll is given by (weights-or-fn element).
-weights-or-fn defaults to first.
+The weight of an element of coll is given by (weightfn element). weightfn
+defaults to first.
 
-Elements with weights of 0 will go to the back, in random order. Negative weights
-cause undefined behaviour."
+Elements with weights of 0 will go to the back, in random order. Negative
+weights cause undefined behaviour."
   ([coll]
      (weighted-shuffle first coll))
-  ([weights-or-fn coll]
-     (if (coll? weights-or-fn)
-       (do (assert (= (count weights-or-fn) (count coll)))
-	   (map fnext (weighted-shuffle (map list weights-or-fn coll))))
+  ([weightfn coll]
      ;; We shuffle coll so that if multiple elements have weight 0, they appear
      ;; in the result in an order which is not dependant on their original
      ;; positions.
      ;; This is O(n^2). An O(n log n) implementation would be to generate a
      ;; random number based on the weight of each element, and sort according to
-     ;; these. To get the same results, the distribution would be continuous with
-     ;; the property that P(D(a) < D(b)) = a/(a+b).
+     ;; these. To get the same results, the distribution would be continuous 
+     ;; with the property that P(D(a) < D(b)) = a/(a+b).
      ;; In this case, the shuffling would be useful in the unlikely event of two
      ;; elements recieving the same random number.
-       (let [scoll      (shuffle coll)
-	     vals	    (ArrayList. scoll)
-	     wgts	    (ArrayList. (map weights-or-fn scoll))]
-	 (loop [#^Integer total	(apply + wgts)
-		#^Integer target	(rand-int total)
-		#^Integer start	0
-		#^Integer i		0]
-	   (cond (= (inc start) (count coll))
-	         true
-		 (> (.get wgts i) target)
-	         (let [tmpv (.get vals i)
-		       tmpw (.get wgts i)
-		       newtot (- total tmpw)]
-		   (.set vals i (.get vals start))
-		   (.set vals start tmpv)
-		   (.set wgts i (.get wgts start))
-		   (.set wgts start tmpw)
-		   (recur newtot (rand-int newtot) (inc start) (inc start)))
-		 (= (inc i) (count coll))
-	         true
-		 true
-	         (recur total (- target (.get wgts i)) start (inc i))))
-	 (seq vals)))))
+     (let [scoll      (shuffle coll)
+	   vals	    (ArrayList. scoll)
+	   wgts	    (ArrayList. (map weightfn scoll))]
+       (loop [#^Integer total	(apply + wgts)
+	      #^Integer target	(rand-int total)
+	      #^Integer start	0
+	      #^Integer i		0]
+	 (cond (= (inc start) (count coll))
+	       true
+	       (> (.get wgts i) target)
+	       (let [tmpv (.get vals i)
+		     tmpw (.get wgts i)
+		     newtot (- total tmpw)]
+		 (.set vals i (.get vals start))
+		 (.set vals start tmpv)
+		 (.set wgts i (.get wgts start))
+		 (.set wgts start tmpw)
+		 (recur newtot (rand-int newtot) (inc start) (inc start)))
+	       (= (inc i) (count coll))
+	       true
+	       true
+	       (recur total (- target (.get wgts i)) start (inc i))))
+       (seq vals))))
 
 (defn index-of
   "Finds the index in coll of the first element for which (pred item elt) is
@@ -74,10 +69,10 @@ true. pred defaults to ="
 
 (defn getattr [hsh key]
   (let [a (attr hsh key)]
-    (cond (and (= a "") (= key :rating)) ;rating="" seems to show up sometimes
-	    0
-	  (#{:id :rating :playcount :lastplay} key)
-	    (Long. a)
+    (cond (#{:id :rating :playcount :lastplay} key)
+	    (if (or (= a "") (= a nil)) ; sometimes they don't show up/are empty
+	      0
+	      (Long. a))
 	  true
 	    a)))
 
@@ -115,18 +110,19 @@ true. pred defaults to ="
     (map #(assoc (nth sorted %) :lpw (inc %))
 	 (range (count songs)))))
 
-(defn weights
+(defn add-weights
   "Given a collection of songs, return a list consisting of the weights assigned
 to each, taking into account rating, playcount and when last played."
   [songs]
   (map (fn [song]
-	 (let [#^Integer rt (song :rating)
-	       #^Integer pc (song :playcount)
-	       #^Integer lp (song :lpw)]
-	   (if (= rt 20) 0
-	       (* (if (= rt 0) 200 rt)
-		  (+ (int (* 1000 (/ lp (count songs))))
-		     (int (/ 1000 (inc pc))))))))
+	 (assoc song :weight
+	   (let [#^Integer rt (song :rating)
+		 #^Integer pc (song :playcount)
+		 #^Integer lp (song :lpw)]
+	     (if (= rt 20) 0
+		 (* (if (= rt 0) 200 rt)
+		    (+ (int (* 1000 (/ lp (count songs))))
+		       (int (/ 1000 (inc pc)))))))))
        (add-last-played-weights songs)))
 
 (defn songs-to-playlist
@@ -155,6 +151,6 @@ to each, taking into account rating, playcount and when last played."
 			       "/mnt/ipod/iPod_Control/.gnupod/GNUtunesDB.xml"))
       songs (get-songs tree)]
   (xml/emit (add-runthrough-playlist tree
-				     (weighted-shuffle (weights songs)
-						       songs))
+				     (weighted-shuffle #(% :weight)
+						       (add-weights songs)))
 	    :pad true))
