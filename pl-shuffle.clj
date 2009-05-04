@@ -68,6 +68,7 @@ true. pred defaults to ="
 			 (range (count coll)))))))
 
 (defn getattr [hsh key]
+  "Gets an attribute from a zipped hashmap."
   (let [a (attr hsh key)]
     (cond (#{:id :rating :playcount :lastplay} key)
 	    (if (or (= a "") (= a nil)) ; sometimes they don't show up/are empty
@@ -84,15 +85,24 @@ true. pred defaults to ="
 	 format (java.util.Date. (* (- ts 2082848400)
 				    1000)))))
 
+;; The order is important for print-song. That's silly.
 (def relevant-keys '(:id :title :album :lastplay :rating :playcount))
 (defn get-songs [tree]
+  "Given an xml tree structure, returns only the relevant keys of the songs in
+it."
+  ;; No real reason for just the relevant ones. But currently no reason to
+  ;; change.
   (xml-> (zip/xml-zip tree)
 	 :files :file (fn [loc]
 			(zipmap relevant-keys
 				(map #(getattr loc %)
 				     relevant-keys)))))
 
+
 (defn print-song [song]
+  "Prints some of the information about a song, formatted to 80 characters.
+Fields are padded/truncated as necessary."
+  ;; depends on the order of relevant-keys.
   (apply cl-format true "~4A ~20A   ~20A   ~19A   ~3A ~A~%"
 	 (map (fn [key]
 		(let [s (song key)]
@@ -104,15 +114,20 @@ true. pred defaults to ="
 	      relevant-keys)))
 
 (defn add-last-played-weights [songs]
-  ;; shuffle because unplayed files have the same timestamp, and would otherwise
+  "Given a collection of songs, add a field :lpw to each. The most recently
+played song has :lpw 1, the next most recent has :lpw 2, etc."
+  ;; Maybe this should be based on timestamp instead, probably logarithmically?
+  ;; then I wouldn't need to pass the entire songlist around.
+  ;; Shuffle because unplayed files have the same timestamp, and would otherwise
   ;; be sorted by id.
   (let [sorted (sort-by #(- (% :lastplay))  (shuffle songs))]
     (map #(assoc (nth sorted %) :lpw (inc %))
 	 (range (count songs)))))
 
 (defn add-weights
-  "Given a collection of songs, return a list consisting of the weights assigned
-to each, taking into account rating, playcount and when last played."
+  "Given a collection of songs, add a field :weight to each, taking into account
+rating, playcount, and when it was last played relative to the other songs in
+the collection."
   [songs]
   (map (fn [song]
 	 (assoc song :weight
@@ -126,6 +141,8 @@ to each, taking into account rating, playcount and when last played."
        (add-last-played-weights songs)))
 
 (defn songs-to-playlist
+  "Given a collection of songs, return a playlist of them with the given name
+and (if provided) id."
   ([coll name]
      (songs-to-playlist coll name nil))
   ([coll name id]
@@ -139,6 +156,9 @@ to each, taking into account rating, playcount and when last played."
 		    coll)}))
 
 (defn add-runthrough-playlist [tree songs]
+  "Given an xml tree structure and a collection of songs, add a playlist to the
+tree named \"Runthrough\" consisting of the songs, in supplied order. If such a
+playlist already exists, it will be replaced."
   (zip/root (let [loc (first (xml-> (zip/xml-zip tree)
 				    :playlist (attr= :name "Runthrough")))
 		  id (if loc (attr loc :plid))
