@@ -2,7 +2,7 @@
   (:require [clojure.zip :as zip])
   (:require [clojure.contrib.lazy-xml :as xml])
   (:use clojure.contrib.zip-filter.xml)
-  (:use com.infolace.format)
+  (:use clojure.contrib.pprint)
   (:import (java.util ArrayList Collections))) ;required for shuffle
 
 (defn shuffle
@@ -173,4 +173,4 @@ playlist already exists, it will be replaced."
   (xml/emit (add-runthrough-playlist tree
 				     (weighted-shuffle #(% :weight)
 						       (add-weights songs)))
-	    :pad true))
+	    :indent 2))
